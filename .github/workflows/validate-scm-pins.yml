@@ -1,0 +1,56 @@
+name: SCM pinned tabs validation
+
+on:
+  push:
+    branches:
+      - ci/scm-pins-validation
+
+permissions:
+  contents: read
+
+jobs:
+  scm-pins:
+    name: Typecheck, lint, and SCM unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      VSCODE_SKIP_PRELAUNCH: '1'
+    steps:
+      - name: Check out the feature at its validation commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use VS Code's required Node version
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libx11-dev libx11-xcb-dev libxkbfile-dev libnotify-bin libkrb5-dev
+
+      - name: Install build-tool dependencies
+        run: npm ci
+        working-directory: build
+
+      - name: Install VS Code dependencies
+        run: npm ci
+
+      - name: Typecheck client against the real VS Code source tree
+        run: npm run typecheck-client
+
+      - name: Lint the changed source and test files
+        run: |
+          npm run eslint -- \
+            src/vs/workbench/contrib/scm/browser/workingSet.ts \
+            src/vs/workbench/contrib/scm/browser/workingSetPins.ts \
+            src/vs/workbench/contrib/scm/browser/scm.contribution.ts \
+            src/vs/workbench/contrib/scm/test/browser/workingSetPins.test.ts
+
+      - name: Transpile client, including the new SCM tests
+        run: npm run gulp transpile-client-esbuild
+
+      - name: Run new SCM pinned-tab tests using VS Code's Node runner
+        run: npm run test-node -- --run src/vs/workbench/contrib/scm/test/browser/workingSetPins.test.ts
